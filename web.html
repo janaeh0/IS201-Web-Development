@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <a href="/" style="color: white; font-size: 1rem; margin-top: 10px;">🏠 Go to Home</a>
+  <meta charset="UTF-8" />
+  <title>Maze Adventure</title>
+  <style>
+    body {
+      background-color: cornflowerblue;
+      color: white;
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      font-weight: bold;
+      margin: 0;
+      font-family: Georgia, 'Times New Roman', Times, serif;
+    }
+
+    canvas {
+      border: 2px solid white;
+      margin: 15px;
+      image-rendering: pixelated;
+    }
+
+    button {
+      padding: 6px 10px;
+      margin: 10px 5px;
+      font-size: 1rem;
+    }
+
+    #controls {
+      margin-top: 10px;
+    }
+
+    #timer, #level {
+      font-size: 1.2rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Maze Adventure</h1>
+
+  <div id="controls">
+    <button onclick="startGame()">Start Game</button>
+  </div>
+
+  <div id="level">Level: 1</div>
+  <div id="timer">⏱️ Time: 0s</div>
+  <canvas id="maze" width="600" height="600"></canvas>
+
+  <script>
+    const canvas = document.getElementById('maze');
+    const ctx = canvas.getContext('2d');
+    const timerEl = document.getElementById('timer');
+    const levelEl = document.getElementById('level');
+
+    let level = 1;
+    const maxLevel = 10;
+    let tileSize, maze, player, goal;
+    let levelStartTime, gameStartTime, timerInterval;
+
+    let moveQueue = [];
+    let isMoving = false;
+    let animationProgress = 0;
+    const animationDuration = 2; // Always super fast!
+    let from = null;
+    let to = null;
+    let trail = [];
+
+    function shuffle(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function generateMaze(width, height) {
+      const maze = Array.from({ length: height }, () => Array(width).fill(1));
+
+      function carve(x, y) {
+        const dirs = shuffle([[0, -2], [2, 0], [0, 2], [-2, 0]]);
+        for (const [dx, dy] of dirs) {
+          const nx = x + dx, ny = y + dy;
+          if (ny > 0 && ny < height && nx > 0 && nx < width && maze[ny][nx] === 1) {
+            maze[ny - dy / 2][nx - dx / 2] = 0;
+            maze[ny][nx] = 0;
+            carve(nx, ny);
+          }
+        }
+      }
+
+      maze[1][1] = 0;
+      carve(1, 1);
+      return maze;
+    }
+
+    function move(dx, dy) {
+      moveQueue.push([dx, dy]);
+    }
+
+    function update() {
+      if (!isMoving && moveQueue.length > 0) {
+        const [dx, dy] = moveQueue.shift();
+        const nx = player.x + dx;
+        const ny = player.y + dy;
+        if (maze[ny] && maze[ny][nx] === 0) {
+          isMoving = true;
+          from = { x: player.x, y: player.y };
+          to = { x: nx, y: ny };
+          animationProgress = 0;
+          trail.push({ x: player.x, y: player.y, life: 20 }); // Star trail
+          player.x = nx;
+          player.y = ny;
+        }
+      }
+
+      if (isMoving) {
+        animationProgress++;
+        if (animationProgress >= animationDuration) {
+          isMoving = false;
+          animationProgress = 0;
+          if (player.x === goal.x && player.y === goal.y) {
+            clearInterval(timerInterval);
+            setTimeout(() => {
+              if (level < maxLevel) {
+                alert(`✅ Level ${level} complete!`);
+                level++;
+                nextLevel();
+              } else {
+                const totalTime = Math.floor((Date.now() - gameStartTime) / 1000);
+                alert(`🎉 You beat all ${maxLevel} levels in ${totalTime} seconds total!`);
+              }
+            }, 100);
+          }
+        }
+      }
+
+      drawMaze();
+      requestAnimationFrame(update);
+    }
+
+    function drawMaze() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let y = 0; y < maze.length; y++) {
+        for (let x = 0; x < maze[0].length; x++) {
+          ctx.fillStyle = maze[y][x] === 1 ? "#222" : "#fff";
+          ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+        }
+      }
+
+      // Draw goal
+      ctx.fillStyle = '#0f0';
+      ctx.fillRect(goal.x * tileSize, goal.y * tileSize, tileSize, tileSize);
+
+      // Draw trail
+      for (let i = trail.length - 1; i >= 0; i--) {
+        const t = trail[i];
+        ctx.font = `${tileSize * 0.6}px serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText('✨', t.x * tileSize + tileSize / 2, t.y * tileSize + tileSize / 2);
+        t.life--;
+        if (t.life <= 0) trail.splice(i, 1);
+      }
+
+      // Draw player
+      let drawX = player.x;
+      let drawY = player.y;
+
+      if (isMoving && from && to) {
+        const t = animationProgress / animationDuration;
+        drawX = from.x + (to.x - from.x) * t;
+        drawY = from.y + (to.y - from.y) * t;
+      }
+
+      ctx.font = `${tileSize - 4}px serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText('🐌', drawX * tileSize + tileSize / 2, drawY * tileSize + tileSize / 2);
+    }
+
+    document.addEventListener('keydown', e => {
+      switch (e.key) {
+        case 'ArrowUp':
+        case 'w': move(0, -1); break;
+        case 'ArrowDown':
+        case 's': move(0, 1); break;
+        case 'ArrowLeft':
+        case 'a': move(-1, 0); break;
+        case 'ArrowRight':
+        case 'd': move(1, 0); break;
+      }
+    });
+
+    function startTimer() {
+      levelStartTime = Date.now();
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - levelStartTime) / 1000);
+        timerEl.textContent = `⏱️ Time: ${elapsed}s`;
+      }, 500);
+    }
+
+    function nextLevel() {
+      const size = 11 + level * 2;
+      maze = generateMaze(size, size);
+      tileSize = canvas.width / size;
+      player = { x: 1, y: 1 };
+      goal = { x: size - 2, y: size - 2 };
+      levelEl.textContent = `Level: ${level}`;
+      trail = [];
+      startTimer();
+    }
+
+    function startGame() {
+      level = 1;
+      moveQueue = [];
+      gameStartTime = Date.now();
+      nextLevel();
+    }
+
+    startGame();
+    requestAnimationFrame(update);
+  </script>
+</body>
+</html>
